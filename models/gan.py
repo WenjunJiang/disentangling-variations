@@ -3,13 +3,21 @@
 import torch
 import torch.nn as nn
 
-class Descriminator(nn.Module):
+class LatentDiscriminator(nn.Module):
     def __init__(self, config):
-        super(Descriminator, self).__init__()
+        super(LatentDiscriminator, self).__init__()
         self.config = config
 
     def forward(self, x):
         pass
+
+class PatchDiscriminator(nn.Module):
+    def __init__(self, config):
+        super(PatchDiscriminator, self).__init__()
+        self.config = config
+
+    def forward(self, x):
+        pass        
 
 class Generator(nn.Module):
     def __init__(self, config):
