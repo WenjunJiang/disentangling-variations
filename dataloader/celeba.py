@@ -26,6 +26,7 @@ AVAILABLE_ATTR = [
     "Wearing_Necklace", "Wearing_Necktie", "Young"
 ]
 
+# TODO: Create logger & fix this
 def log_attributes_stats(train_attributes, valid_attributes, test_attributes, config):
     """
     Log attributes distributions.
@@ -85,8 +86,8 @@ def normalize_images(images):
     """Normalize image values."""
     return images.float().div_(255.0).mul_(2.0).add_(-1)
 
-class CelebaDataset(object):
-    def __init__(self, images, attributes, config):
+class CelebaDataset(Dataset):
+    def __init__(self, images, attributes, config, transform=None):
         """
         Initialize the data sampler with training data.
         """
@@ -96,37 +97,30 @@ class CelebaDataset(object):
         self.batch_size = config.data['batch_size']
         self.v_flip = config.data['v_flip']
         self.h_flip = config.data['h_flip']
+        self.transform = transform
+        self.config = config        
 
     def __len__(self):
         """
         Number of images in the object dataset.
         """
-        return len(self.images[0]) + len(self.images[1]) + len(self.images[2])
+        return len(self.images)
 
-    def train_batch(self, bs):
-        """
-        Get a batch of random images with their attributes.
-        """
-        # image IDs
-        idx = torch.LongTensor(bs).random_(len(self.images))
+    def __getitem__(self, index):
+        root = self.config.data['root']
+        if self.config.data['type'] == 'reg':
+            root = os.path.join(root, 'celeba_processed')
+        elif self.config.data['type'] == 'align':
+            root = os.path.join(root, 'celeba_align_processed')
+        elif self.config.data['type'] == 'hq':
+            root = os.path.join(root, 'celeba_align_processed')
 
-        # select images / attributes
-        batch_x = normalize_images(self.images.index_select(0, idx).cuda())
-        batch_y = self.attributes.index_select(0, idx).cuda()
+        image_path = os.path.join(root, self.images[index])
+        image = Image.open(image_path).convert('RGB')
 
-        # data augmentation
-        if self.v_flip and np.random.rand() <= 0.5:
-            batch_x = batch_x.index_select(2, torch.arange(batch_x.size(2) - 1, -1, -1).long().cuda())
-        if self.h_flip and np.random.rand() <= 0.5:
-            batch_x = batch_x.index_select(3, torch.arange(batch_x.size(3) - 1, -1, -1).long().cuda())
+        if self.transform is not None:
+            image = self.transform(image)
+        
+        attribute = self.attributes[index]
 
-        return Variable(batch_x, volatile=False), Variable(batch_y, volatile=False)
-
-    def eval_batch(self, i, j):
-        """
-        Get a batch of images in a range with their attributes.
-        """
-        assert i < j
-        batch_x = normalize_images(self.images[i:j].cuda())
-        batch_y = self.attributes[i:j].cuda()
-        return Variable(batch_x, volatile=True), Variable(batch_y, volatile=True)
+        return (attribute, image)
