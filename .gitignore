@@ -103,3 +103,5 @@ ENV/
 data
 !data/preprocess.py
 !data/download.sh
+
+weird_code.py
