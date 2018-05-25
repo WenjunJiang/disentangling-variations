@@ -8,14 +8,17 @@ train:
     num_epochs: 10
     momentum: 0.5
     weight_decay: 0
+    lat_dis_steps: 10
+    ptc_dis_steps: 10
   data:
     root: '/home/kapil/Documents/DeepLearning/disentangling-variations/data'
-    batch_size: 50
+    batch_size: 100
     valid_size: 0.1
     random_seed: 0.4
     shuffle: False
     # CelebA Dataset
     # possible values : ['align', 'reg', 'hq']
+    image_size: 256
     type: 'align'
     attributes:
       - Smiling
