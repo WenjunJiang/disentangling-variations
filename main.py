@@ -5,6 +5,7 @@ import sys
 import argparse
 from argparse import RawTextHelpFormatter
 import time
+import shutil
 
 import numpy as np
 from functools import reduce
@@ -28,12 +29,6 @@ def count_parameters(model):
     """Counts trainable(active) parameters of a model"""
     total_params = sum(reduce( lambda a, b: a*b, x.size()) for x in model.parameters())
     return total_params
-
-def save_checkpoint(state, is_best, loc, filename='checkpoint.pth.tar'):
-    file_loc = os.path.join(loc, filename)
-    torch.save(state, file_loc)
-    if is_best:
-        shutil.copyfile(file_loc, os.path.join(loc, 'model_best.pth.tar'))
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -82,102 +77,95 @@ class Trainer(object):
         self.data = data
 
         # models
-        self.ae = models[0]
+        self.vae = models[0]
+        self.lat_dis = models[1]
+        self.ptc_dis = models[2]
+        # self.clf_dis = models[3]
+
+        # criterion & optimizers
+        self.vae_criterion = nn.CrossEntropyLoss().to(device)
+        self.vae_optimizer = torch.optim.Adam(self.vae.parameters(), self.config.hyperparameters['lr'],
+                                        weight_decay=self.config.hyperparameters['weight_decay'])
+
+        self.lat_dis_criterion = nn.CrossEntropyLoss().to(device)
+        self.lat_dis_optimizer = torch.optim.Adam(self.lat_dis.parameters(), self.config.hyperparameters['lr'],
+                                        weight_decay=self.config.hyperparameters['weight_decay'])
+
+        self.ptc_dis_criterion = nn.CrossEntropyLoss().to(device)
+        self.ptc_dis_optimizer = torch.optim.Adam(self.ptc_dis.parameters(), self.config.hyperparameters['lr'],
+                                        weight_decay=self.config.hyperparameters['weight_decay'])                                        
+
+        # reload pretrained models
+
+        # training stats
+        self.stats = {}
+        self.stats['vae_training_logs'] = []
+        self.stats['lat_dis_training_logs'] = []
+        self.stats['ptc_dis_training_logs'] = []
+
+        # best reconstruction loss / best accuracy
+        self.best_loss = 1e12
+        self.best_accu = -1e12
+        self.n_total_iter = 0
+
+    def lat_dis_step(self):
+        pass
+    
+    def ptc_dis_step(self):
+        pass
+
+    def clf_dis_step(self):
+        pass
+
+    def vae_step(self):
+        pass
+
+    def step(self, epoch):
+        pass
+
+    def save_model(self, name):
+        pass
+
+    def save_best_periodic(self, to_log):
+        pass
+    
+    def adjust_learning_rate(self):
+        pass
+
+class Evaluator(object):
+    """docstring for Evaluate."""
+    def __init__(self, config, data, models):
+        super(Evaluator, self).__init__()
+        self.config = config
+        self.data = data
+
+        # models
+        self.vae = models[0]
         self.lat_dis = models[1]
         self.ptc_dis = models[2]
         self.clf_dis = models[3]
+        self.eval_clf = models[4]
 
-        # optimizers
+        assert self.eval_clf.image_size == config.data['image_size']
+        assert all(attr in self.eval_clf.attributes for attr in config.data['attributes'])
 
+    def eval_reconstruction_loss(self):
+        pass
 
+    def eval_lat_dis_accuracy(self):
+        pass
 
-def train(train_loader, model, criterion, optimizer, epoch):
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
+    def eval_ptc_dis_accuracy(self):
+        pass
 
-    # switch to train mode
-    model.train()
+    def eval_clf_dis_accuracy(self):
+        pass
 
-    end = time.time()
-    for i, (input, target) in enumerate(train_loader):
-        # measure data loading time
-        data_time.update(time.time() - end)
+    def eval_clf_accuracy(self):
+        pass
 
-        target = target.cuda(non_blocking=True)
-
-        # compute output
-        output = model(input)
-        loss = criterion(output, target)
-
-        # measure accuracy and record loss
-        prec1, prec5 = accuracy(output, target, topk=(1, 5))
-        losses.update(loss.item(), input.size(0))
-        top1.update(prec1[0], input.size(0))
-        top5.update(prec5[0], input.size(0))
-
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        if i % args.print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                  'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                   epoch, i, len(train_loader), batch_time=batch_time,
-                   data_time=data_time, loss=losses, top1=top1, top5=top5))
-
-def validate(val_loader, model, criterion):
-    batch_time = AverageMeter()
-    losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
-
-    # switch to evaluate mode
-    model.eval()
-
-    with torch.no_grad():
-        end = time.time()
-        for i, (input, target) in enumerate(val_loader):
-            target = target.cuda(non_blocking=True)
-
-            # compute output
-            output = model(input)
-            loss = criterion(output, target)
-
-            # measure accuracy and record loss
-            prec1, prec5 = accuracy(output, target, topk=(1, 5))
-            losses.update(loss.item(), input.size(0))
-            top1.update(prec1[0], input.size(0))
-            top5.update(prec5[0], input.size(0))
-
-            # measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
-
-            if i % args.print_freq == 0:
-                print('Test: [{0}/{1}]\t'
-                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                      'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                       i, len(val_loader), batch_time=batch_time, loss=losses,
-                       top1=top1, top5=top5))
-
-        print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
-              .format(top1=top1, top5=top5))
-
-    return top1.avg
+    def evaluate(self, n_epoch):
+        pass
 
 def loss_function(recon_x, x, mu, logvar):
     bce = F.binary_cross_entropy(recon_x, x.view(-1, 784), size_average=False)
@@ -197,42 +185,35 @@ def main(args):
         dist.init_process_group(backend=config.distributed['dist_backend'], init_method=config.distributed['dist_url'], \
                                 world_size=config.distributed['world_size'])
 
-    model = VAE(config.hyperparameters)
+    vae = VAE(config.hyperparameters)
+    lat_dis = LatentDiscriminator(config.hyperparameters)
+    ptc_dis = PatchDiscriminator(config.hyperparameters)
     if not args.distributed:
-        model = nn.DataParallel(model).to(device)
+        vae = nn.DataParallel(vae).to(device)
+        lat_dis = nn.DataParallel(lat_dis).to(device)
+        ptc_dis = nn.DataParallel(ptc_dis).to(device)
     else:
-        model.to(device)
-        model = nn.parallel.DistributedDataParallel(model)
-
-    # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), config.hyperparameters['lr'],
-                                weight_decay=config.hyperparameters['weight_decay'])
-
-    # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.checkpoint):
-            print("[!] Loading checkpoint '{}'".format(args.checkpoint))
-            checkpoint = torch.load(args.checkpoint)
-            args.start_epoch = checkpoint['epoch']
-            best_prec1 = checkpoint['best_prec1']
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            print("[+] Loaded checkpoint '{}' (epoch {})"
-                .format(args.checkpoint, checkpoint['epoch']))
-        else:
-            print("[-] No checkpoint found at '{}'".format(args.checkpoint))
+        vae.to(device)
+        vae = nn.parallel.DistributedDataParallel(vae)
+        lat_dis.to(device)
+        lat_dis = nn.parallel.DistributedDataParallel(lat_dis)
+        ptc_dis.to(device)
+        ptc_dis = nn.parallel.DistributedDataParallel(ptc_dis)
 
     cudnn.benchmark = True
 
     # Data Loading
+    transformations = transforms.Compose([
+        transforms.ToTensor()
+    ])
+
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
     images, attributes = load_celeba_images(config.data)
-    train_dataset = CelebaDataset(images[0], attributes[0], config)
-    valid_dataset = CelebaDataset(images[1], attributes[1], config)
-    test_dataset = CelebaDataset(images[0], attributes[0], config)
+    train_dataset = CelebaDataset(images[0], attributes[0], config, transformations)
+    valid_dataset = CelebaDataset(images[1], attributes[1], config, transformations)
+    test_dataset = CelebaDataset(images[0], attributes[0], config, transformations)
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -251,30 +232,43 @@ def main(args):
         test_dataset, batch_size=config.data['batch_size'], shuffle=config.data['shuffle'],
         num_workers=config.data['workers'], pin_memory=config.data['pin_memory'])
 
+    trainer = Trainer(config, train_loader, \
+                (vae, lat_dis, ptc_dis))
     if args.evaluate:
-        validate(val_loader, model, criterion)
-        return
+        evaluator = Evaluator(config, val_loader, \
+                    (vae, lat_dis, ptc_dis))
 
-    # for epoch in range(config.hyperparameters['num_epochs']):
-    #     if args.distributed:
-    #         train_sampler.set_epoch(epoch)
-    #     adjust_learning_rate(optimizer, epoch, config)
-    #
-    #     # train for one epoch
-    #     train(train_loader, model, criterion, optimizer, epoch)
-    #
-    #     # evaluate on validation set
-    #     prec1 = validate(val_loader, model, criterion)
-    #
-    #     # remember best prec@1 and save checkpoint
-    #     is_best = prec1 > best_prec1
-    #     best_prec1 = max(prec1, best_prec1)
-    #     save_checkpoint({
-    #         'epoch': epoch+1,
-    #         'state_dict': model.state_dict(),
-    #         'best_prec1': best_prec1,
-    #         'optimizer': optimizer.state_dict(),
-    #     }, is_best)
+    for epoch in range(config.hyperparameters['num_epochs']):
+        if args.distributed:
+            train_sampler.set_epoch(epoch)
+
+        # latent discriminator training
+        for _ in range(config.hyperparameters['lat_dis_steps']):
+            trainer.lat_dis_step()
+
+        # patch discriminator training
+        for _ in range(config.hyperparameters['ptc_dis_steps']):
+            trainer.ptc_dis_step()
+
+        # classifier discriminator training
+        for _ in range(config.hyperparameters['clf_dis_steps']):
+            trainer.clf_dis_step()
+
+        trainer.vae_step()
+        trainer.step(epoch)
+
+        # evaluate on validation set
+        prec1 = evaluator(val_loader, vae, criterion)
+
+        # remember best prec@1 and save checkpoint
+        is_best = prec1 > best_prec1
+        best_prec1 = max(prec1, best_prec1)
+        save_checkpoint({
+            'epoch': epoch+1,
+            'state_dict': vae.state_dict(),
+            'best_prec1': best_prec1,
+            'optimizer': optimizer.state_dict(),
+        }, is_best)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Disentangling Variations', formatter_class=RawTextHelpFormatter)
