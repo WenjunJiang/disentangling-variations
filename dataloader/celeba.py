@@ -85,8 +85,7 @@ def normalize_images(images):
     """Normalize image values."""
     return images.float().div_(255.0).mul_(2.0).add_(-1)
 
-class DataSampler(object):
-
+class CelebaDataset(object):
     def __init__(self, images, attributes, config):
         """
         Initialize the data sampler with training data.
