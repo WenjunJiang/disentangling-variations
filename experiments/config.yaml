@@ -6,14 +6,29 @@ train:
   hyperparameters:
     lr: 0.001
     num_epochs: 10
+    momentum: 0.5
+    weight_decay: 0
   data:
+    root: '/home/kapil/Documents/DeepLearning/disentangling-variations/data'
     batch_size: 50
     valid_size: 0.1
     random_seed: 0.4
     shuffle: False
+    # CelebA Dataset
+    # possible values : ['align', 'reg', 'hq']
+    type: 'align'
+    attributes:
+      - Smiling
+      - Male
+    v_flip: 0
+    h_flip: 0
     # If using CUDA, turn pin_memory=True and workers=1
     pin_memory: True
     workers: 1
     augment: False
     show_sample: True
   logs: './logs'
+  distributed:
+    world_size: 1
+    dist_backend: tcp
+    dist_url: 'env://'
