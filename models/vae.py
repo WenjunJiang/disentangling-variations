@@ -3,55 +3,53 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class VAE(nn.Module):
-    def Conv(self, nInput, nOutput, kernel_sz, stride_sz):
+    def Conv(self, in_channels, out_channels, kernel_sz, stride_sz):
         if (stride_sz == 1) and (kernel_sz % 2 == 0):
             print('[-] Cannot have even kernel_sz without stride, increasing kernel_sz by 1')
             kernel_sz = kernel_sz + 1
 
         if stride_sz >= 1:
             padding = np.ceil((kernel_sz - stride_sz/2))
-            return nn.Conv2d(nInput, nOutput, kernel_size=(kernel_sz, kernel_sz), \
+            return nn.Conv2d(in_channels, out_channels, kernel_size=(kernel_sz, kernel_sz), \
                     stride=(stride_sz, stride_sz), padding=padding).to(device)
 
         else:
             padding = np.ceil((kernel_sz-1/stride_sz)/2)
             out_padding = (2 * padding) - (kernel_sz + 1 / stride_sz)
-            return nn.ConvTranspose2d(nInput, nOutput, kernel_size=(kernel_sz, kernel_sz), \
+            return nn.ConvTranspose2d(nInpuin_channelst, out_channels, kernel_size=(kernel_sz, kernel_sz), \
                 stride=(stride_sz, stride_sz), padding=padding, output_padding=out_padding).to(device)
 
-    def ConvBlock(self, input, output, kernel_sz, stride_sz):
-        self.conv1 = self.Conv(input, output, kernel_sz, stride_sz)
+    def ConvBlock(self, in_channels, out_channels, kernel_sz, stride_sz):
+        self.conv1 = self.Conv(in_channels, out_channels, kernel_sz, stride_sz)
         self.batch_norm1 = nn.BatchNorm2d(output, momentum=0.1)
         self.relu1 = nn.ReLU()
 
     def __init__(self, config):
         super(VAE, self).__init__()
-
         self.config = config
 
-        self.conv_block1 = self.ConvBlock()
-        self.conv_block2 = self.ConvBlock()
-        self.conv_block3 = self.ConvBlock()
-        self.conv_block4 = self.ConvBlock()
-        self.conv_block5 = self.ConvBlock()
-        self.conv_block6 = self.ConvBlock()
-        self.conv_block7 = self.ConvBlock()
-        self.conv_block8 = self.ConvBlock()
-        
+        self.conv_block_1 = self.ConvBlock(in_channels=3, out_channels=32, kernel_sz=5, stride_sz=2)
+        self.conv_block_2 = self.ConvBlock(in_channels=32, out_channels=64, kernel_sz=5, stride_sz=2)
+        self.conv_block_3 = self.ConvBlock(in_channels=64, out_channels=128, kernel_sz=5, stride_sz=2)
+        self.conv_block_41 = self.ConvBlock(in_channels=128, out_channels=256, kernel_sz=5, stride_sz=2)
+        self.conv_block_42 = self.ConvBlock(in_channels=128, out_channels=256, kernel_sz=5, stride_sz=2)
+        self.conv_block_5 = self.ConvBlock(in_channels=256, out_channels=128, kernel_sz=5, stride_sz=1/2)
+        self.conv_block_6 = self.ConvBlock(in_channels=128, out_channels=64, kernel_sz=5, stride_sz=1/2)
+        self.conv_block_7 = self.ConvBlock(in_channels=64, out_channels=32, kernel_sz=5, stride_sz=1/2)
+        self.conv_block_8 = self.ConvBlock(in_channels=32, out_channels=3, kernel_sz=5, stride_sz=1/2)
 
-        self.fc1 = nn.Linear(784, 400)
-        self.fc21 = nn.Linear(400, 20)
-        self.fc22 = nn.Linear(400, 20)
-        self.fc3 = nn.Linear(20, 400)
-        self.fc4 = nn.Linear(400, 784)
+        # self.fc1 = nn.Linear(256, 256, bias=True)
 
     def encode(self, x):
-        h1 = F.relu(self.fc1(x))
-        return self.fc21(h1), self.fc22(h1)
+        out = F.relu(self.conv_block_1(x))
+        out = F.relu(self.conv_block_2(out))
+        out = F.relu(self.conv_block_3(out))
+        return self.conv_block_41(out), self.conv_block_42(out) 
 
     def reparameterize(self, mu, logvar):
         if self.training:
@@ -62,10 +60,12 @@ class VAE(nn.Module):
             return mu
 
     def decode(self, z):
-        h3 = F.relu(self.fc3(z))
-        return F.sigmoid(self.fc4(h3))
+        out = F.relu(self.conv_block_5(z))
+        out = F.relu(self.conv_block_6(out))
+        out = F.relu(self.conv_block_7(out))
+        return F.sigmoid(self.conv_block_8(out))
 
     def forward(self, x):
-        mu, logvar = self.encode(x.view(-1, 784))
+        mu, logvar = self.encode(x)
         z = self.reparameterize(mu, logvar)
         return self.decode(z), mu, logvar
