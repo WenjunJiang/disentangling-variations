@@ -35,3 +35,7 @@ train:
     world_size: 1
     dist_backend: tcp
     dist_url: 'env://'
+  checkpoints:
+    loc: '/home/kapil/Documents/DeepLearning/disentangling-variations/checkpoints'
+    ckpt_fname: 'checkpoint.pth.tar'
+    best_ckpt_fname: 'best_checkpoint.pth.tar'

@@ -121,16 +121,32 @@ class Trainer(object):
         pass
 
     def step(self, epoch):
-        pass
+        self.epoch = epoch
 
-    def save_model(self, name):
-        pass
+    def save_model(self, state, is_best):
+        ckpt_path = os.path.join(self.config.checkpoints['loc'], self.config.checkpoints['ckpt_fname'])
+        best_ckpt_path = os.path.join(self.config.checkpoints['loc'], self.config.checkpoints['best_ckpt_fname'])
+        torch.save(state, ckpt_path)
+        if is_best:
+            shutil.copy(ckpt_path, best_ckpt_path)
 
-    def save_best_periodic(self, to_log):
-        pass
-    
     def adjust_learning_rate(self):
-        pass
+        lr = self.config.hyperparameters['lr'] * (0.1 ** (self.epoch // 30))
+        for param_group in self.optim.param_groups:
+            param_group['lr'] = lr
+
+    def load_model(self, model, optim):
+        checkpoint = torch.load(os.path.join(self.config.checkpoints['loc'], \
+                        self.config.checkpoints['ckpt_fname']))
+
+        start_epoch = checkpoint['epoch']
+        best_prec1 = checkpoint['best_prec1']
+        model.load_state_dict(checkpoint['state_dict'])
+        optim.load_state_dict(checkpoint['optimizer'])
+
+        print("[#] Loaded Checkpoint '{}' (epoch {})"
+            .format(self.config.checkpoints['ckpt_fname'], checkpoint['epoch']))
+        return (start_epoch, best_prec1)
 
 class Evaluator(object):
     """docstring for Evaluate."""
