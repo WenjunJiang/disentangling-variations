@@ -69,15 +69,46 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
+def get_attr_loss(output, attributes, flip, params):
+    """
+    Compute attributes loss.
+    """
+    assert type(flip) is bool
+    k = 0
+    loss = 0
+    for (_, n_cat) in params.attr:
+        # categorical
+        x = output[:, k:k + n_cat].contiguous()
+        y = attributes[:, k:k + n_cat].max(1)[1].view(-1)
+        if flip:
+            # generate different categories
+            shift = torch.LongTensor(y.size()).random_(n_cat - 1) + 1
+            y = (y + Variable(shift.cuda())) % n_cat
+        loss += F.cross_entropy(x, y)
+        k += n_cat
+    return loss
+
+def vae_loss_function(recon_x, input, mu, logvar):
+    BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784), size_average=False)
+    # see Appendix B from VAE paper:
+    # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
+    # https://arxiv.org/abs/1312.6114
+    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
+    return BCE + KLD
+
 class Trainer(object):
     """docstring for Trainer."""
     def __init__(self, config, data, models):
         super(Trainer, self).__init__()
         self.config = config
         self.data = data
+        self.epoch = 0
 
         # models
         self.vae = models[0]
+        self.vae_train_loss = 0        
         self.lat_dis = models[1]
         self.ptc_dis = models[2]
         # self.clf_dis = models[3]
@@ -118,14 +149,32 @@ class Trainer(object):
         pass
 
     def vae_step(self):
-        pass
+        self.vae.train()
+        self.train_loss = 0
+        for batch_idx, (images, labels) in enumerate(self.data):
+            recon_x, mu, logvar = self.vae(images)
+            loss = vae_loss_function(recon_x, images, mu, logvar)
+            self.vae_optimizer.zero_grad()
+            loss.backward()
+            train_loss += loss.item()
+            self.vae_optimizer.step()
+
+            if batch_idx % self.config.logs['log_interval'] == 0:
+                print(
+                    'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    self.epoch, batch_idx * len(images), len(self.data.images),
+                    100. * batch_idx / len(self.data),
+                    loss.item() / len(self.data))
+                )
 
     def step(self, epoch):
         self.epoch = epoch
 
+
     def save_model(self, state, is_best):
         ckpt_path = os.path.join(self.config.checkpoints['loc'], self.config.checkpoints['ckpt_fname'])
-        best_ckpt_path = os.path.join(self.config.checkpoints['loc'], self.config.checkpoints['best_ckpt_fname'])
+        best_ckpt_path = os.path.join(self.config.checkpoints['loc'], \
+                            self.config.checkpoints['best_ckpt_fname'])
         torch.save(state, ckpt_path)
         if is_best:
             shutil.copy(ckpt_path, best_ckpt_path)
