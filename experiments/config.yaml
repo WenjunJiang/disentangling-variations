@@ -30,7 +30,9 @@ train:
     workers: 1
     augment: False
     show_sample: True
-  logs: './logs'
+  logs: 
+    loc: '/home/kapil/Documents/DeepLearning/disentangling-variations/logs'
+    log_interval: 10
   distributed:
     world_size: 1
     dist_backend: tcp
