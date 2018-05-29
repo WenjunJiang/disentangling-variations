@@ -21,13 +21,15 @@ class VAE(nn.Module):
         else:
             padding = np.ceil((kernel_sz-1/stride_sz)/2)
             out_padding = (2 * padding) - (kernel_sz + 1 / stride_sz)
-            return nn.ConvTranspose2d(nInpuin_channelst, out_channels, kernel_size=(kernel_sz, kernel_sz), \
+            return nn.ConvTranspose2d(in_channels, out_channels, kernel_size=(kernel_sz, kernel_sz), \
                 stride=(stride_sz, stride_sz), padding=padding, output_padding=out_padding).to(device)
 
     def ConvBlock(self, in_channels, out_channels, kernel_sz, stride_sz):
-        self.conv1 = self.Conv(in_channels, out_channels, kernel_sz, stride_sz)
-        self.batch_norm1 = nn.BatchNorm2d(output, momentum=0.1)
-        self.relu1 = nn.ReLU()
+        return nn.Sequential(
+            self.Conv(in_channels, out_channels, kernel_sz, stride_sz),
+            nn.BatchNorm2d(out_channels, momentum=self.config['momentum']),
+            nn.ReLU()
+        )
 
     def __init__(self, config):
         super(VAE, self).__init__()
