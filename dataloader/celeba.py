@@ -45,6 +45,7 @@ def log_attributes_stats(train_attributes, valid_attributes, test_attributes, co
 
 def load_celeba_images(config):
     loc = config['root']
+    attributes = torch.load(os.path.join(loc, 'attributes.pth'))
     if config['type'] == 'reg':
         loc = os.path.join(loc, 'celeba_processed')
     elif config['type'] == 'align':
