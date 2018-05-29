@@ -122,4 +122,4 @@ class CelebaDataset(Dataset):
         
         attribute = self.attributes[index]
 
-        return (attribute, image)
+        return (image, attribute)
