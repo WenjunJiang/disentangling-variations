@@ -3,6 +3,7 @@ train:
   image_save_iterations: 2500
   image_display_iterations: 100
   display: 1
+  gpu: 1
   hyperparameters:
     lr: 0.001
     num_epochs: 10
