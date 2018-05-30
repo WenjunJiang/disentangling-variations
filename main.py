@@ -88,15 +88,24 @@ def get_attr_loss(output, attributes, flip, params):
         k += n_cat
     return loss
 
-def vae_loss_function(recon_x, input, mu, logvar):
-    BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784), size_average=False)
+def loss_function(recon_x, x, mu, logvar):
+    bce = F.binary_cross_entropy(recon_x, x.view(-1, 784), size_average=False)
+    # https://arxiv.org/abs/1312.6114
+    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+    kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return bce + kld
+
+def vae_loss_function(recon_x, target, mu, logvar):
+    # BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784), size_average=False)
+    mse_loss = nn.MSELoss(size_average=False)
+    MSE = mse_loss(recon_x.view(-1, 196608), target.view(-1, 196608))
     # see Appendix B from VAE paper:
     # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
     # https://arxiv.org/abs/1312.6114
     # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
-    return BCE + KLD
+    return MSE + KLD
 
 class Trainer(object):
     """docstring for Trainer."""
@@ -152,17 +161,20 @@ class Trainer(object):
         self.vae.train()
         self.train_loss = 0
         for batch_idx, (images, labels) in enumerate(self.data):
+            if self.config.gpu:
+                images = images.to(device)
+                labels = labels.to(device)
             recon_x, mu, logvar = self.vae(images)
             loss = vae_loss_function(recon_x, images, mu, logvar)
             self.vae_optimizer.zero_grad()
             loss.backward()
-            train_loss += loss.item()
+            self.train_loss += loss.item()
             self.vae_optimizer.step()
 
             if batch_idx % self.config.logs['log_interval'] == 0:
                 print(
                     'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    self.epoch, batch_idx * len(images), len(self.data.images),
+                    self.epoch, batch_idx * len(images), len(self.data.dataset),
                     100. * batch_idx / len(self.data),
                     loss.item() / len(self.data))
                 )
@@ -171,7 +183,7 @@ class Trainer(object):
         self.epoch = epoch
 
 
-    def save_model(self, state, is_best):
+    def save_checkpoint(self, state, is_best):
         ckpt_path = os.path.join(self.config.checkpoints['loc'], self.config.checkpoints['ckpt_fname'])
         best_ckpt_path = os.path.join(self.config.checkpoints['loc'], \
                             self.config.checkpoints['best_ckpt_fname'])
@@ -231,13 +243,6 @@ class Evaluator(object):
 
     def evaluate(self, n_epoch):
         pass
-
-def loss_function(recon_x, x, mu, logvar):
-    bce = F.binary_cross_entropy(recon_x, x.view(-1, 784), size_average=False)
-    # https://arxiv.org/abs/1312.6114
-    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-    kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    return bce + kld
 
 def main(args):
     np.random.seed(args.seed)
@@ -304,6 +309,7 @@ def main(args):
                     (vae, lat_dis, ptc_dis))
 
     for epoch in range(config.hyperparameters['num_epochs']):
+        time1 = time.time()
         if args.distributed:
             train_sampler.set_epoch(epoch)
 
@@ -328,12 +334,14 @@ def main(args):
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
-        save_checkpoint({
+        trainer.save_checkpoint({
             'epoch': epoch+1,
             'state_dict': vae.state_dict(),
             'best_prec1': best_prec1,
             'optimizer': optimizer.state_dict(),
         }, is_best)
+        time2 = time.time()
+        print('Time taken by this epoch is {}'.format(time2-time1))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Disentangling Variations', formatter_class=RawTextHelpFormatter)
