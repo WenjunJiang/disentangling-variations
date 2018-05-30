@@ -17,6 +17,7 @@ from torch.optim import Adam
 import torch.distributed as dist
 import torchvision
 from torch.autograd import Variable
+from torchvision.utils import save_image
 
 from dataloader import *
 from models import *
@@ -94,7 +95,7 @@ def loss_function(recon_x, x, mu, logvar):
     # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     return bce + kld
-
+    
 def vae_loss_function(recon_x, target, mu, logvar):
     # BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784), size_average=False)
     mse_loss = nn.MSELoss(size_average=False)
@@ -117,7 +118,7 @@ class Trainer(object):
 
         # models
         self.vae = models[0]
-        self.vae_train_loss = 0        
+        self.vae_train_loss = 0
         self.lat_dis = models[1]
         self.ptc_dis = models[2]
         # self.clf_dis = models[3]
@@ -133,7 +134,7 @@ class Trainer(object):
 
         self.ptc_dis_criterion = nn.CrossEntropyLoss().to(device)
         self.ptc_dis_optimizer = torch.optim.Adam(self.ptc_dis.parameters(), self.config.hyperparameters['lr'],
-                                        weight_decay=self.config.hyperparameters['weight_decay'])                                        
+                                        weight_decay=self.config.hyperparameters['weight_decay'])
 
         # reload pretrained models
 
@@ -150,14 +151,15 @@ class Trainer(object):
 
     def lat_dis_step(self):
         pass
-    
+
     def ptc_dis_step(self):
         pass
 
     def clf_dis_step(self):
         pass
 
-    def vae_step(self):
+    def vae_step(self, epoch):
+        # switch to train mode
         self.vae.train()
         self.train_loss = 0
         for batch_idx, (images, labels) in enumerate(self.data):
@@ -174,7 +176,7 @@ class Trainer(object):
             if batch_idx % self.config.logs['log_interval'] == 0:
                 print(
                     'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    self.epoch, batch_idx * len(images), len(self.data.dataset),
+                    epoch+1, batch_idx * len(images), len(self.data.dataset),
                     100. * batch_idx / len(self.data),
                     loss.item() / len(self.data))
                 )
@@ -183,7 +185,13 @@ class Trainer(object):
         self.epoch = epoch
 
 
-    def save_checkpoint(self, state, is_best):
+    def save_checkpoint(self, epoch, best_prec, is_best):
+        state = {
+            'epoch': epoch+1,
+            'state_dict': self.vae.state_dict(),
+            'best_prec1': best_prec,
+            'optimizer': self.vae_optimizer.state_dict()
+        }
         ckpt_path = os.path.join(self.config.checkpoints['loc'], self.config.checkpoints['ckpt_fname'])
         best_ckpt_path = os.path.join(self.config.checkpoints['loc'], \
                             self.config.checkpoints['best_ckpt_fname'])
@@ -215,6 +223,7 @@ class Evaluator(object):
         super(Evaluator, self).__init__()
         self.config = config
         self.data = data
+        self.eval_loss = 0
 
         # models
         self.vae = models[0]
@@ -225,6 +234,33 @@ class Evaluator(object):
 
         assert self.eval_clf.image_size == config.data['image_size']
         assert all(attr in self.eval_clf.attributes for attr in config.data['attributes'])
+
+    def eval_vae_loss(self, epoch):
+        # switch to eval mode
+        self.vae.eval()
+        self.eval_loss = 0
+        with torch.no_grad():
+            for batch_idx, (images, labels) in enumerate(self.data):
+                if self.config.gpu:
+                    images = images.to(device)
+                    labels = labels.to(device)
+
+                # compute output
+                recon_x, mu, logvar = self.vae(images)
+                self.eval_loss += vae_loss_function(recon_x, images, mu, logvar).item()
+
+                # save decoder output to check vae's generated images
+                if batch_idx == 0:
+                    n = min(images.size(0), 8)
+                    img_sz = self.config.data['image_size']
+                    comparison = torch.cat([images[:n], \
+                        recon_x.view(self.config.data['batch_size'], 3, img_sz, img_sz)[:n]])
+                    img_nm = os.path.join(self.config.data['generated'], \
+                        'reconstruction_' + str(epoch) + '.png')
+                    save_image(comparison.cpu(), img_nm, nrow=n)
+
+        self.eval_loss /= len(self.data.dataset)
+        return self.eval_loss
 
     def eval_reconstruction_loss(self):
         pass
@@ -248,6 +284,7 @@ def main(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     config = NetworkConfig(args.config)
+    best_prec1 = 0
 
     args.distributed = config.distributed['world_size'] > 1
     if args.distributed:
@@ -307,6 +344,7 @@ def main(args):
     if args.evaluate:
         evaluator = Evaluator(config, val_loader, \
                     (vae, lat_dis, ptc_dis))
+        evaluator = Evaluator(config, val_loader, vae)
 
     for epoch in range(config.hyperparameters['num_epochs']):
         time1 = time.time()
@@ -325,23 +363,21 @@ def main(args):
         for _ in range(config.hyperparameters['clf_dis_steps']):
             trainer.clf_dis_step()
 
-        trainer.vae_step()
+        trainer.vae_step(epoch)
         trainer.step(epoch)
 
-        # evaluate on validation set
-        prec1 = evaluator(val_loader, vae, criterion)
-
-        # remember best prec@1 and save checkpoint
-        is_best = prec1 > best_prec1
-        best_prec1 = max(prec1, best_prec1)
-        trainer.save_checkpoint({
-            'epoch': epoch+1,
-            'state_dict': vae.state_dict(),
-            'best_prec1': best_prec1,
-            'optimizer': optimizer.state_dict(),
-        }, is_best)
+        if args.evaluate:
+            # evaluate on validation set
+            prec1 = evaluator.eval_vae_loss(epoch)
+            # remember best prec@1 and save checkpoint
+            is_best = prec1 > best_prec1
+            best_prec1 = max(prec1, best_prec1)
+            trainer.save_checkpoint(epoch, best_prec1, is_best)
+        else:
+            trainer.save_checkpoint(epoch, 0, True)
+            
         time2 = time.time()
-        print('Time taken by this epoch is {}'.format(time2-time1))
+        print('[+] Time taken by this epoch is {}'.format(time2-time1))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Disentangling Variations', formatter_class=RawTextHelpFormatter)
@@ -358,7 +394,7 @@ if __name__ == '__main__':
                         help="Seed for random function, default=100")
     parser.add_argument('--pretrained', type=int, default=0, \
                         help="Turn ON if checkpoints of model available in /checkpoints dir")
-    parser.add_argument('--evaluate', type=int, default=0, \
+    parser.add_argument('--evaluate', type=int, default=1, \
                         help='evaluate model on validation set')
     args = parser.parse_args()
 
