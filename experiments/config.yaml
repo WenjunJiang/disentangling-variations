@@ -6,14 +6,16 @@ train:
   gpu: 1
   hyperparameters:
     lr: 0.001
-    num_epochs: 10
+    # turn value to zero to turn off learning rate decay
+    lr_decay: 0.5
+    # do not turn this to zero
+    lr_decay_epoch: 10
+    num_epochs: 100
     momentum: 0.5
     weight_decay: 0
-    lat_dis_steps: 10
-    ptc_dis_steps: 10
   data:
     root: '/home/kapil/Documents/DeepLearning/disentangling-variations/data'
-    generated: '/home/kapil/Documents/DeepLearning/disentangling-variations/data/generated'    
+    generated: '/home/kapil/Documents/DeepLearning/disentangling-variations/data/generated'
     batch_size: 100
     valid_size: 0.1
     random_seed: 0.4
@@ -32,7 +34,7 @@ train:
     workers: 1
     augment: False
     show_sample: True
-  logs: 
+  logs:
     loc: '/home/kapil/Documents/DeepLearning/disentangling-variations/logs'
     log_interval: 10
   distributed:
